@@ -72,7 +72,6 @@ impl Chip8 {
         // );
 
         // execute
-        let mut render = false;
         match op {
             0x0 => match nnn {
                 0x0E0 => self.pixels.iter_mut().for_each(|x| *x = false),
@@ -167,7 +166,7 @@ impl Chip8 {
                     }
                 }
 
-                render = true;
+                return true;
             }
             0xF => match nn {
                 0x07 => self.v[x] = self.delay_timer,
@@ -193,7 +192,7 @@ impl Chip8 {
             _ => panic!("unimplemented op: 0x{:X}", op),
         }
 
-        render
+        false
     }
 }
 
