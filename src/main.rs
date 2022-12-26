@@ -2,7 +2,12 @@
 
 use std::{env, fs};
 
-use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum, rect::Rect};
+use sdl2::{
+    event::Event,
+    keyboard::{Keycode, Scancode},
+    pixels::PixelFormatEnum,
+    rect::Rect,
+};
 
 const FONT: [u8; 0x50] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -27,6 +32,10 @@ struct Chip8 {
     ram: [u8; 4096],
     pixels: [bool; 2048],
     stack: Vec<u16>,
+    keys: [bool; 16],
+    key_pressed: bool,
+    speed: u32,
+    cycles_count: u32,
 
     pc: usize,
     i: usize,
@@ -36,7 +45,7 @@ struct Chip8 {
 }
 
 impl Chip8 {
-    fn new(bin: &Vec<u8>) -> Self {
+    fn new(bin: &Vec<u8>, speed: u32) -> Self {
         let mut ram = [0; 4096];
         ram[0x050..0x050 + FONT.len()].copy_from_slice(&FONT);
         ram[0x200..0x200 + bin.len()].copy_from_slice(bin);
@@ -45,6 +54,10 @@ impl Chip8 {
             ram,
             pixels: [false; 2048],
             stack: vec![],
+            keys: [false; 16],
+            key_pressed: false,
+            speed,
+            cycles_count: 0,
             pc: 0x200,
             i: 0,
             delay_timer: 0, // TODO decrement 60Hz
@@ -53,7 +66,24 @@ impl Chip8 {
         }
     }
 
+    fn key_press(&mut self, key: usize) {
+        self.key_pressed = true;
+        self.keys[key] = true;
+    }
+
+    fn key_release(&mut self, key: usize) {
+        self.keys[key] = false;
+    }
+
     fn step(&mut self) -> bool {
+        // timers
+        self.cycles_count += 1;
+        if self.cycles_count > self.speed / 60 {
+            self.cycles_count = 0;
+            (self.delay_timer, _) = self.delay_timer.overflowing_sub(1);
+            (self.sound_timer, _) = self.sound_timer.overflowing_sub(1);
+        }
+
         // fetch
         let instr = (self.ram[self.pc] as u16) << 8 | (self.ram[self.pc + 1] as u16);
         self.pc += 2;
@@ -72,6 +102,7 @@ impl Chip8 {
         // );
 
         // execute
+        let mut render = false;
         match op {
             0x0 => match nnn {
                 0x0E0 => self.pixels.iter_mut().for_each(|x| *x = false),
@@ -118,9 +149,9 @@ impl Chip8 {
                     self.v[0xF] = if overflow { 1 } else { 0 };
                 }
                 0x6 => {
-                    self.v[x] = self.v[y];
-                    self.v[0xF] = self.v[x] & 0x1;
-                    self.v[x] >>= 1;
+                    let tmp = self.v[y];
+                    self.v[x] = tmp >> 1;
+                    self.v[0xF] = tmp & 0x1;
                 }
                 0x7 => {
                     let (res, overflow) = self.v[y].overflowing_sub(self.v[x]);
@@ -128,9 +159,9 @@ impl Chip8 {
                     self.v[0xF] = if overflow { 1 } else { 0 };
                 }
                 0xE => {
-                    self.v[x] = self.v[y];
-                    self.v[0xF] = self.v[x] & 0x1;
-                    self.v[x] <<= 1;
+                    let tmp = self.v[y];
+                    self.v[x] = tmp << 1;
+                    self.v[0xF] = tmp & 0x1;
                 }
                 _ => panic!("unimplemented op 0x8 with nnn: 0x{:03X}", nnn),
             },
@@ -140,6 +171,8 @@ impl Chip8 {
                 }
             }
             0xA => self.i = nnn as usize,
+            0xB => self.pc = nnn as usize + self.v[0x0] as usize,
+            0xC => self.v[x] = rand::random::<u8>() & nn,
             0xD => {
                 let x = (self.v[x] & 63) as usize;
                 let y = (self.v[y] & 31) as usize;
@@ -155,27 +188,62 @@ impl Chip8 {
                         }
 
                         let old_pixel = self.pixels[offset];
-                        let mut new_pixel = ((byte >> (7 - c)) & 1) == 1;
+                        let new_pixel = ((byte >> (7 - c)) & 1) == 1;
 
                         if new_pixel && old_pixel {
-                            new_pixel = false;
+                            self.pixels[offset] = false;
                             self.v[0xF] = 1;
+                        } else {
+                            self.pixels[offset] = new_pixel;
                         }
-
-                        self.pixels[offset] = new_pixel;
                     }
                 }
 
-                return true;
+                render = true;
             }
+            0xE => match nn {
+                0x9E => {
+                    if self.keys[self.v[x] as usize] {
+                        self.pc += 2;
+                    }
+                }
+                0xA1 => {
+                    if !self.keys[self.v[x] as usize] {
+                        self.pc += 2;
+                    }
+                }
+                _ => panic!("unimplemented op 0xE with nnn: 0x{:03X}", nnn),
+            },
             0xF => match nn {
                 0x07 => self.v[x] = self.delay_timer,
+                0x0A => {
+                    if !self.key_pressed {
+                        self.pc -= 2;
+                    }
+                }
                 0x15 => self.delay_timer = self.v[x],
                 0x18 => self.sound_timer = self.v[x],
+                0x1E => {
+                    self.i += self.v[x] as usize;
+                    if self.i > 0x0FFF {
+                        self.i -= 0x0FFF;
+                        self.v[0xF] = 1;
+                    };
+                }
+                0x29 => self.i = (self.v[x] as usize * 5) + 0x050,
                 0x33 => {
-                    self.ram[self.i] = self.v[x] / 100;
-                    self.ram[self.i + 1] = self.v[x] % 100 / 10;
+                    self.ram[self.i] = (self.v[x] / 100) % 10;
+                    self.ram[self.i + 1] = (self.v[x] / 10) % 10;
                     self.ram[self.i + 2] = self.v[x] % 10;
+
+                    // TODO This obviously works... I dont understand why test_opcode.ch8 fails
+                    println!(
+                        "{}={}{}{}",
+                        self.v[x],
+                        self.ram[self.i],
+                        self.ram[self.i + 1],
+                        self.ram[self.i + 2]
+                    );
                 }
                 0x55 => {
                     for offset in 0..=x {
@@ -192,15 +260,38 @@ impl Chip8 {
             _ => panic!("unimplemented op: 0x{:X}", op),
         }
 
-        false
+        self.key_pressed = false;
+        render
     }
 }
 
+fn sdl_scancode_to_chip8_key(key: Scancode) -> Option<usize> {
+    match key {
+        Scancode::Num1 => Some(0x1),
+        Scancode::Num2 => Some(0x2),
+        Scancode::Num3 => Some(0x3),
+        Scancode::Num4 => Some(0xC),
+        Scancode::Q => Some(0x4),
+        Scancode::W => Some(0x5),
+        Scancode::E => Some(0x6),
+        Scancode::R => Some(0xD),
+        Scancode::A => Some(0x7),
+        Scancode::S => Some(0x8),
+        Scancode::D => Some(0x9),
+        Scancode::F => Some(0xE),
+        Scancode::Z => Some(0xA),
+        Scancode::X => Some(0x0),
+        Scancode::C => Some(0xB),
+        Scancode::V => Some(0xF),
+        _ => None,
+    }
+}
 fn main() -> Result<(), String> {
     let bin_path = env::args().nth(1).expect("Missing bin path");
     let bin = fs::read(bin_path).expect("Error reading bin");
 
-    let mut emulator = Chip8::new(&bin);
+    let emu_speed = 700; // 700 instructions per second
+    let mut emulator = Chip8::new(&bin, emu_speed);
 
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
@@ -232,7 +323,7 @@ fn main() -> Result<(), String> {
 
     let mut event_pump = sdl.event_pump()?;
 
-    let sleep_duration = ::std::time::Duration::new(0, 1_000_000_000u32 / 60);
+    let sleep_duration = ::std::time::Duration::new(0, 1_000_000_000u32 / emu_speed);
 
     'running: loop {
         // Handle events
@@ -244,6 +335,24 @@ fn main() -> Result<(), String> {
                     ..
                 } => {
                     break 'running;
+                }
+                Event::KeyDown {
+                    scancode: Some(scancode),
+                    repeat: false,
+                    ..
+                } => {
+                    if let Some(key) = sdl_scancode_to_chip8_key(scancode) {
+                        emulator.key_press(key);
+                    }
+                }
+                Event::KeyUp {
+                    scancode: Some(scancode),
+                    repeat: false,
+                    ..
+                } => {
+                    if let Some(key) = sdl_scancode_to_chip8_key(scancode) {
+                        emulator.key_release(key);
+                    }
                 }
                 _ => {}
             }
