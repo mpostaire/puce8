@@ -5,7 +5,7 @@ use std::{env, fs, path::Path};
 use sdl2::{
     audio::{AudioCallback, AudioSpecDesired},
     event::Event,
-    keyboard::{Scancode},
+    keyboard::Scancode,
     pixels::PixelFormatEnum,
     rect::Rect,
 };
