@@ -56,8 +56,6 @@ impl AudioCallback for SquareWave {
     }
 }
 
-// TODO test games/programs bins
-// TODO wasm port
 fn main() -> Result<(), String> {
     let bin_path = env::args().nth(1).expect("Missing bin path");
     let bin = fs::read(&bin_path).expect("Error reading bin");
@@ -112,10 +110,6 @@ fn main() -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     let rect = Rect::new(0, 0, 512, 256);
-
-    // TODO AUDIO: generate continuous square wave (with the callback not the queue)
-    //      --> pause device when sound timer is == 0
-    //      --> play device when sound timer is > 0
 
     let mut event_pump = sdl.event_pump()?;
 
