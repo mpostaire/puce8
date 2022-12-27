@@ -1,6 +1,6 @@
 // https://tobiasvl.github.io/blog/write-a-chip-8-emulator/
 
-use std::{env, fs};
+use std::{env, fs, path::Path};
 
 use sdl2::{
     event::Event,
@@ -30,10 +30,10 @@ const FONT: [u8; 0x50] = [
 
 struct Chip8 {
     ram: [u8; 4096],
-    pixels: [bool; 2048],
+    vram: [bool; 2048],
     stack: Vec<u16>,
     keys: [bool; 16],
-    key_pressed: bool,
+    last_pressed_key: Option<u8>,
     speed: u32,
     cycles_count: u32,
 
@@ -52,22 +52,22 @@ impl Chip8 {
 
         Self {
             ram,
-            pixels: [false; 2048],
+            vram: [false; 2048],
             stack: vec![],
             keys: [false; 16],
-            key_pressed: false,
+            last_pressed_key: None,
             speed,
             cycles_count: 0,
             pc: 0x200,
             i: 0,
-            delay_timer: 0, // TODO decrement 60Hz
-            sound_timer: 0, // TODO decrement 60Hz and make beep sound as long as it is above 0
+            delay_timer: 0,
+            sound_timer: 0,
             v: [0; 16],
         }
     }
 
     fn key_press(&mut self, key: usize) {
-        self.key_pressed = true;
+        self.last_pressed_key = Some(key as u8);
         self.keys[key] = true;
     }
 
@@ -97,15 +97,15 @@ impl Chip8 {
         let nnn = instr & 0x0FFF;
 
         // println!(
-        //     "[step] pc=0x{:04X}, instr=0x{:04X} (op=0x{:X}, x=0x{:X}, y=0x{:X}, n=0x{:X}, nn=0x{:02X}, nnn=0x{:02X})",
-        //     self.pc - 2, instr, op, x, y, n, nn, nnn
+        //     "pc: 0x{:04X}, instr: 0x{:04X} (op: 0x{:X}, x: 0x{:X}, y: 0x{:X}, n: 0x{:X}, nn: 0x{:02X}, nnn: 0x{:02X}), regs: {:02X?}",
+        //     self.pc - 2, instr, op, x, y, n, nn, nnn, self.v
         // );
 
         // execute
         let mut render = false;
         match op {
             0x0 => match nnn {
-                0x0E0 => self.pixels.iter_mut().for_each(|x| *x = false),
+                0x0E0 => self.vram.iter_mut().for_each(|pixel| *pixel = false),
                 0x0EE => {
                     self.pc = self.stack.pop().unwrap() as usize;
                 }
@@ -146,22 +146,24 @@ impl Chip8 {
                 0x5 => {
                     let (res, overflow) = self.v[x].overflowing_sub(self.v[y]);
                     self.v[x] = res;
-                    self.v[0xF] = if overflow { 1 } else { 0 };
+                    self.v[0xF] = if overflow { 0 } else { 1 };
                 }
                 0x6 => {
                     let tmp = self.v[y];
                     self.v[x] = tmp >> 1;
+                    self.v[y] = self.v[y];
                     self.v[0xF] = tmp & 0x1;
                 }
                 0x7 => {
                     let (res, overflow) = self.v[y].overflowing_sub(self.v[x]);
                     self.v[x] = res;
-                    self.v[0xF] = if overflow { 1 } else { 0 };
+                    self.v[0xF] = if overflow { 0 } else { 1 };
                 }
                 0xE => {
                     let tmp = self.v[y];
                     self.v[x] = tmp << 1;
-                    self.v[0xF] = tmp & 0x1;
+                    self.v[y] = self.v[y];
+                    self.v[0xF] = (tmp & 0x80) >> 7;
                 }
                 _ => panic!("unimplemented op 0x8 with nnn: 0x{:03X}", nnn),
             },
@@ -178,23 +180,18 @@ impl Chip8 {
                 let y = (self.v[y] & 31) as usize;
                 self.v[0xF] = 0;
 
-                let sprite_byte = &self.ram[self.i..self.i + (n as usize)];
+                let sprite_bytes = &self.ram[self.i..self.i + (n as usize)];
 
-                for (r, byte) in sprite_byte.iter().enumerate() {
+                for (r, byte) in sprite_bytes.iter().enumerate() {
                     for c in 0..8 {
                         let offset = ((y + r) % 32) * 64 + ((x + c) % 64);
-                        if offset >= 2048 {
-                            break;
-                        }
 
-                        let old_pixel = self.pixels[offset];
-                        let new_pixel = ((byte >> (7 - c)) & 1) == 1;
+                        let old_pixel = self.vram[offset];
+                        let new_pixel = (((byte >> (7 - c)) & 1) == 1) ^ old_pixel;
 
-                        if new_pixel && old_pixel {
-                            self.pixels[offset] = false;
+                        self.vram[offset] = new_pixel;
+                        if old_pixel != new_pixel {
                             self.v[0xF] = 1;
-                        } else {
-                            self.pixels[offset] = new_pixel;
                         }
                     }
                 }
@@ -217,7 +214,9 @@ impl Chip8 {
             0xF => match nn {
                 0x07 => self.v[x] = self.delay_timer,
                 0x0A => {
-                    if !self.key_pressed {
+                    if let Some(key) = self.last_pressed_key {
+                        self.v[x] = key;
+                    } else {
                         self.pc -= 2;
                     }
                 }
@@ -235,24 +234,15 @@ impl Chip8 {
                     self.ram[self.i] = (self.v[x] / 100) % 10;
                     self.ram[self.i + 1] = (self.v[x] / 10) % 10;
                     self.ram[self.i + 2] = self.v[x] % 10;
-
-                    // TODO This obviously works... I dont understand why test_opcode.ch8 fails
-                    println!(
-                        "{}={}{}{}",
-                        self.v[x],
-                        self.ram[self.i],
-                        self.ram[self.i + 1],
-                        self.ram[self.i + 2]
-                    );
                 }
                 0x55 => {
                     for offset in 0..=x {
-                        self.ram[self.i + offset] = self.v[x];
+                        self.ram[self.i + offset] = self.v[offset];
                     }
                 }
                 0x65 => {
                     for offset in 0..=x {
-                        self.v[x] = self.ram[self.i + offset];
+                        self.v[offset] = self.ram[self.i + offset];
                     }
                 }
                 _ => panic!("unimplemented op 0xF with nnn: 0x{:03X}", nnn),
@@ -260,7 +250,7 @@ impl Chip8 {
             _ => panic!("unimplemented op: 0x{:X}", op),
         }
 
-        self.key_pressed = false;
+        self.last_pressed_key = None;
         render
     }
 }
@@ -286,9 +276,10 @@ fn sdl_scancode_to_chip8_key(key: Scancode) -> Option<usize> {
         _ => None,
     }
 }
+
 fn main() -> Result<(), String> {
     let bin_path = env::args().nth(1).expect("Missing bin path");
-    let bin = fs::read(bin_path).expect("Error reading bin");
+    let bin = fs::read(&bin_path).expect("Error reading bin");
 
     let emu_speed = 700; // 700 instructions per second
     let mut emulator = Chip8::new(&bin, emu_speed);
@@ -296,8 +287,13 @@ fn main() -> Result<(), String> {
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
 
+    let window_title = format!(
+        "puce8 -- {}",
+        Path::new(&bin_path).file_stem().unwrap().to_str().unwrap()
+    );
+
     let window = video
-        .window("game tutorial", 512, 256)
+        .window(window_title.as_str(), 512, 256)
         .position_centered()
         .hidden()
         .build()
@@ -363,7 +359,7 @@ fn main() -> Result<(), String> {
                 .with_lock(None, |buffer: &mut [u8], pitch: usize| {
                     for y in 0..32 {
                         for x in 0..64 {
-                            let pixel = if emulator.pixels[y * 64 + x] { 255 } else { 0 };
+                            let pixel = if emulator.vram[y * 64 + x] { 255 } else { 0 };
                             let offset = y * pitch + x * 3;
                             buffer[offset] = pixel;
                             buffer[offset + 1] = pixel;
