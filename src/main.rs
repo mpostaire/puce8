@@ -3,6 +3,7 @@
 use std::{env, fs, path::Path};
 
 use sdl2::{
+    audio::{AudioCallback, AudioSpecDesired},
     event::Event,
     keyboard::{Keycode, Scancode},
     pixels::PixelFormatEnum,
@@ -33,7 +34,7 @@ struct Chip8 {
     vram: [bool; 2048],
     stack: Vec<u16>,
     keys: [bool; 16],
-    last_pressed_key: Option<u8>,
+    just_released_key: Option<u8>,
     speed: u32,
     cycles_count: u32,
 
@@ -55,7 +56,7 @@ impl Chip8 {
             vram: [false; 2048],
             stack: vec![],
             keys: [false; 16],
-            last_pressed_key: None,
+            just_released_key: None,
             speed,
             cycles_count: 0,
             pc: 0x200,
@@ -67,12 +68,16 @@ impl Chip8 {
     }
 
     fn key_press(&mut self, key: usize) {
-        self.last_pressed_key = Some(key as u8);
         self.keys[key] = true;
     }
 
     fn key_release(&mut self, key: usize) {
+        self.just_released_key = Some(key as u8);
         self.keys[key] = false;
+    }
+
+    fn is_sound_playing(&self) -> bool {
+        self.sound_timer > 0
     }
 
     fn step(&mut self) -> bool {
@@ -80,8 +85,12 @@ impl Chip8 {
         self.cycles_count += 1;
         if self.cycles_count > self.speed / 60 {
             self.cycles_count = 0;
-            (self.delay_timer, _) = self.delay_timer.overflowing_sub(1);
-            (self.sound_timer, _) = self.sound_timer.overflowing_sub(1);
+            if self.delay_timer > 0 {
+                self.delay_timer -= 1;
+            }
+            if self.sound_timer > 0 {
+                self.sound_timer -= 1;
+            }
         }
 
         // fetch
@@ -214,7 +223,7 @@ impl Chip8 {
             0xF => match nn {
                 0x07 => self.v[x] = self.delay_timer,
                 0x0A => {
-                    if let Some(key) = self.last_pressed_key {
+                    if let Some(key) = self.just_released_key {
                         self.v[x] = key;
                     } else {
                         self.pc -= 2;
@@ -250,7 +259,7 @@ impl Chip8 {
             _ => panic!("unimplemented op: 0x{:X}", op),
         }
 
-        self.last_pressed_key = None;
+        self.just_released_key = None;
         render
     }
 }
@@ -277,6 +286,30 @@ fn sdl_scancode_to_chip8_key(key: Scancode) -> Option<usize> {
     }
 }
 
+struct SquareWave {
+    phase_inc: f32,
+    phase: f32,
+    volume: f32,
+}
+
+impl AudioCallback for SquareWave {
+    type Channel = f32;
+
+    fn callback(&mut self, out: &mut [f32]) {
+        // Generate a square wave
+        for x in out.iter_mut() {
+            *x = if self.phase <= 0.5 {
+                self.volume
+            } else {
+                -self.volume
+            };
+            self.phase = (self.phase + self.phase_inc) % 1.0;
+        }
+    }
+}
+
+// TODO test games/programs bins
+// TODO wasm port
 fn main() -> Result<(), String> {
     let bin_path = env::args().nth(1).expect("Missing bin path");
     let bin = fs::read(&bin_path).expect("Error reading bin");
@@ -286,6 +319,21 @@ fn main() -> Result<(), String> {
 
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
+    let audio = sdl.audio()?;
+
+    let desired_spec = AudioSpecDesired {
+        freq: Some(44100),
+        channels: Some(1), // mono
+        samples: None,     // default sample size
+    };
+    let device = audio.open_playback(None, &desired_spec, |spec| {
+        // initialize the audio callback
+        SquareWave {
+            phase_inc: 440.0 / spec.freq as f32,
+            phase: 0.0,
+            volume: 0.05,
+        }
+    })?;
 
     let window_title = format!(
         "puce8 -- {}",
@@ -316,6 +364,10 @@ fn main() -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     let rect = Rect::new(0, 0, 512, 256);
+
+    // TODO AUDIO: generate continuous square wave (with the callback not the queue)
+    //      --> pause device when sound timer is == 0
+    //      --> play device when sound timer is > 0
 
     let mut event_pump = sdl.event_pump()?;
 
@@ -372,6 +424,12 @@ fn main() -> Result<(), String> {
             canvas.clear();
             canvas.copy(&screen_texture, None, rect)?;
             canvas.present();
+        }
+
+        if emulator.is_sound_playing() {
+            device.resume();
+        } else {
+            device.pause();
         }
 
         ::std::thread::sleep(sleep_duration);
