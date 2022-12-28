@@ -15,7 +15,7 @@ use std::{process, sync::Mutex};
 use puce8::emulator::{Chip8, Chip8Keys};
 
 #[cfg(target_os = "emscripten")]
-use puce8::emscripten::set_main_loop_callback;
+use puce8::emscripten;
 
 // This is very hacky but I can't figure how to communicate button inputs from js to rust...
 lazy_static! {
@@ -191,7 +191,7 @@ fn run_at_speed(bin: Vec<u8>, emu_speed: u32) {
     }
 
     #[cfg(target_os = "emscripten")]
-    set_main_loop_callback(main_loop, fps as i32);
+    emscripten::set_main_loop_callback(main_loop, fps as i32);
 }
 
 fn run(bin: Vec<u8>) {

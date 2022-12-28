@@ -167,9 +167,12 @@
             ROMPicker.click();
         };
 
+        var openROMButton = document.getElementById("open-rom");
         var openROM = function(e) {
             const file_reader = new FileReader();
             file_reader.onload = (event) => {
+                openROMButton.disabled = true;
+
                 const uint8Arr = new Uint8Array(event.target.result);
                 const num_bytes = uint8Arr.length * uint8Arr.BYTES_PER_ELEMENT;
                 const data_ptr = Module._malloc(num_bytes);
