@@ -87,6 +87,14 @@ impl Chip8 {
         self.sound_timer > 0
     }
 
+    pub fn run_frame(&mut self, fps: u32) -> bool {
+        let mut res = false;
+        for _ in 0..self.speed / fps {
+            res = res || self.step();
+        }
+        res
+    }
+
     pub fn step(&mut self) -> bool {
         // timers
         self.cycles_count += 1;
@@ -200,7 +208,7 @@ impl Chip8 {
 
                 for (r, byte) in sprite_bytes.iter().enumerate() {
                     for c in 0..8 {
-                        let offset = ((y + r) % 32) * 64 + ((x + c) % 64);
+                        let offset = ((y + r) & 31) * 64 + ((x + c) & 63);
 
                         let old_pixel = self.vram[offset];
                         let new_pixel = (((byte >> (7 - c)) & 1) == 1) ^ old_pixel;

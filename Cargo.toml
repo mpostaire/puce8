@@ -4,8 +4,7 @@ version = "0.1.0"
 authors = ["mpostaire"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 sdl2 = "0.35.2"
 rand = "0.8.5"
+lazy_static = "1.4.0"

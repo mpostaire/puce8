@@ -1,0 +1,164 @@
+html, body {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    overflow: hidden;
+    font-family: Arial, sans-serif;
+}
+
+button {
+    min-width: 7em;
+}
+
+select {
+    min-width: 7em;
+    text-align: center;
+}
+
+.emscripten {
+    padding-right: 0;
+    margin-left: auto;
+    margin-right: auto;
+    display: block;
+}
+
+div.emscripten {
+    text-align: center;
+}
+
+/* the canvas *must not* have any border or padding, or mouse coords will be wrong */
+canvas.emscripten {
+    border: 0px none;
+}
+
+.spinner {
+    height: 50px;
+    width: 50px;
+    margin: 0px auto;
+    -webkit-animation: rotation .8s linear infinite;
+    -moz-animation: rotation .8s linear infinite;
+    -o-animation: rotation .8s linear infinite;
+    animation: rotation 0.8s linear infinite;
+    border-left: 10px solid #d2d6cd;
+    border-right: 10px solid #d2d6cd;
+    border-bottom: 10px solid #d2d6cd;
+    border-top: 10px solid #9bbc09;
+    border-radius: 100%;
+    background-color: #a4a6af;
+}
+
+@-webkit-keyframes rotation {
+    from {
+        -webkit-transform: rotate(0deg);
+    }
+
+    to {
+        -webkit-transform: rotate(360deg);
+    }
+}
+
+@-moz-keyframes rotation {
+    from {
+        -moz-transform: rotate(0deg);
+    }
+
+    to {
+        -moz-transform: rotate(360deg);
+    }
+}
+
+@-o-keyframes rotation {
+    from {
+        -o-transform: rotate(0deg);
+    }
+
+    to {
+        -o-transform: rotate(360deg);
+    }
+}
+
+@keyframes rotation {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+#chip8 {
+    display: flex;
+    justify-content: center;
+    flex-direction: row;
+
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    background-color: #d2d6cd;
+    padding: 2em;
+    border-radius: 1em;
+
+    box-shadow: 0 0 2em gray;
+    -o-box-shadow: 0 0 2em gray;
+    -moz-box-shadow: 0 0 2em gray;
+    -webkit-box-shadow: 0 0 2em gray;
+
+    -webkit-transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%);
+
+    user-select: none;
+    -o-user-select: none;
+    -moz-user-select: none;
+    -webkit-user-select: none;
+}
+
+#chip8-controls {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    margin-left: 1em;
+}
+
+#chip8-menu {
+    display: flex;
+    justify-content: center;
+}
+
+#chip8-screen-border {
+    padding: 2em;
+    border-radius: 1em;
+    width: 512px;
+    height: 256px;
+    background-color: black;
+}
+
+#chip8-keypad {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    height: 12em;
+    width: 12em;
+    margin: 1em;
+    row-gap: 0.5em;
+    column-gap: 0.5em;
+}
+
+.chip8-key {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+    width: 100%;
+    height: 100%;
+    border-radius: 8px;
+    background-color: #bbbbbb;
+    filter: brightness(90%);
+}
+
+.chip8-key:hover {
+    filter: brightness(100%);
+    cursor: pointer;
+}
+.chip8-key:active {
+    filter: brightness(80%);
+}

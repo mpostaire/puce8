@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en-us">
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>puce8</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+</head>
+
+<body>
+    <figure style="overflow:visible;" id="spinner">
+        <div class="spinner"></div>
+    </figure>
+    <div class="emscripten" id="status">Downloading...</div>
+    <div class="emscripten">
+        <progress value="0" max="100" id="progress" hidden=1></progress>
+    </div>
+    <div id="chip8">
+        <div id="chip8-screen-border">
+            <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+        </div>
+        <div id="chip8-controls">
+            <div id="chip8-menu">
+                <input type="file" onchange="openROM(event)" accept=".ch8" id="rom-picker" style="display: none;"></input>
+                <button onclick="openROMPicker()" id="open-rom">Open ROM...</button>
+            </div>
+            <div id="chip8-keypad">
+                <a class="chip8-key" id="chip8-key-1" data-key="1">1</a>
+                <a class="chip8-key" id="chip8-key-2" data-key="2">2</a>
+                <a class="chip8-key" id="chip8-key-3" data-key="3">3</a>
+                <a class="chip8-key" id="chip8-key-C" data-key="12">C</a>
+                <a class="chip8-key" id="chip8-key-4" data-key="4">4</a>
+                <a class="chip8-key" id="chip8-key-5" data-key="5">5</a>
+                <a class="chip8-key" id="chip8-key-6" data-key="6">6</a>
+                <a class="chip8-key" id="chip8-key-D" data-key="13">D</a>
+                <a class="chip8-key" id="chip8-key-7" data-key="7">7</a>
+                <a class="chip8-key" id="chip8-key-8" data-key="8">8</a>
+                <a class="chip8-key" id="chip8-key-9" data-key="9">9</a>
+                <a class="chip8-key" id="chip8-key-E" data-key="14">E</a>
+                <a class="chip8-key" id="chip8-key-A" data-key="10">A</a>
+                <a class="chip8-key" id="chip8-key-0" data-key="0">0</a>
+                <a class="chip8-key" id="chip8-key-B" data-key="11">B</a>
+                <a class="chip8-key" id="chip8-key-F" data-key="15">F</a>
+            </div>
+        </div>
+    </div>
+    <script type='text/javascript'>
+        var statusElement = document.getElementById('status');
+        var progressElement = document.getElementById('progress');
+        var spinnerElement = document.getElementById('spinner');
+
+        var Module = {
+            preRun: [],
+            postRun: [],
+            print: (function () {
+                return function (text) {
+                    if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+                    // These replacements are necessary if you render to raw HTML
+                    //text = text.replace(/&/g, "&amp;");
+                    //text = text.replace(/</g, "&lt;");
+                    //text = text.replace(/>/g, "&gt;");
+                    //text = text.replace('\n', '<br>', 'g');
+                    console.log(text);
+                };
+            })(),
+            printErr: function (text) {
+                if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+                if (0) { // XXX disabled for safety typeof dump == 'function') {
+                    dump(text + '\n'); // fast, straight to the real console
+                } else {
+                    console.error(text);
+                }
+            },
+            canvas: (function () {
+                let canvas = document.getElementById('canvas');
+
+                // As a default initial behavior, pop up an alert when webgl context is lost. To make your
+                // application robust, you may want to override this behavior before shipping!
+                // See http://www.khronos.org/registry/webgl/specs/latest/1.0/#5.15.2
+                canvas.addEventListener("webglcontextlost", function (e) { alert('WebGL context lost. You will need to reload the page.'); e.preventDefault(); }, false);
+
+                return canvas;
+            })(),
+            setStatus: function (text) {
+                if (!Module.setStatus.last) Module.setStatus.last = { time: Date.now(), text: '' };
+                if (text === Module.setStatus.last.text) return;
+                let m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+                let now = Date.now();
+                if (m && now - Module.setStatus.last.time < 30) return; // if this is a progress update, skip it if too soon
+                Module.setStatus.last.time = now;
+                Module.setStatus.last.text = text;
+                if (m) {
+                    text = m[1];
+                    progressElement.value = parseInt(m[2]) * 100;
+                    progressElement.max = parseInt(m[4]) * 100;
+                    progressElement.hidden = false;
+                    spinnerElement.hidden = false;
+                } else {
+                    progressElement.value = null;
+                    progressElement.max = null;
+                    progressElement.hidden = true;
+                    if (!text) spinnerElement.hidden = true;
+                }
+                statusElement.innerHTML = text;
+            },
+            totalDependencies: 0,
+            monitorRunDependencies: function (left) {
+                this.totalDependencies = Math.max(this.totalDependencies, left);
+                Module.setStatus(left ? 'Preparing... (' + (this.totalDependencies - left) + '/' + this.totalDependencies + ')' : 'All downloads complete.');
+            }
+        };
+
+        // https://github.com/emscripten-core/emscripten/issues/3614#issuecomment-142032269
+        function simulateKeyEvent(eventType, keyCode, charCode) {
+            var eventObj = document.createEventObject ? document.createEventObject() : document.createEvent("Events");
+
+            if (eventObj.initEvent)
+                eventObj.initEvent("keydown", true, true);
+
+            eventObj.keyCode = keyCode;
+            eventObj.which = keyCode;
+
+            console.log("on" + eventType + " " + eventObj.keyCode)
+            Module.canvas.dispatchEvent ? Module.canvas.dispatchEvent(eventObj) : Module.canvas.fireEvent("onkeydown", eventObj); 
+        }
+        const buttons = [
+            "chip8-key-1", "chip8-key-2", "chip8-key-3", "chip8-key-C",
+            "chip8-key-4", "chip8-key-5", "chip8-key-6", "chip8-key-D",
+            "chip8-key-7", "chip8-key-8", "chip8-key-9", "chip8-key-E",
+            "chip8-key-A", "chip8-key-0", "chip8-key-B", "chip8-key-F"
+        ];
+        let currentButton = null;
+        buttons.forEach(function (item) {
+            let elem = document.getElementById(item);
+            elem.onmousedown = function () {
+                Module.ccall('on_gui_key_press', 'void', ['number'], [elem.dataset.key]);
+                currentButton = elem;
+            };
+            elem.onmouseup = function() {
+                Module.ccall('on_gui_key_release', 'void', ['number'], [elem.dataset.key]);
+                currentButton = null;
+            };
+            elem.onmouseleave = function() {
+                if (elem === currentButton) {
+                    Module.ccall('on_gui_key_release', 'void', ['number'], [elem.dataset.key]);
+                    currentButton = null;
+                }
+            };
+        });
+
+        Module.setStatus('Downloading...');
+        window.onerror = function (text) {
+            if (text === "uncaught exception: unwind")
+                return;
+
+            Module.setStatus('Exception thrown, see JavaScript console');
+            spinnerElement.style.display = 'none';
+            Module.setStatus = function (text) {
+                if (text) Module.printErr('[post-exception status] ' + text);
+            };
+        };
+
+        var ROMPicker = document.getElementById('rom-picker');
+        var openROMPicker = function() {
+            ROMPicker.click();
+        };
+
+        var openROM = function(e) {
+            const file_reader = new FileReader();
+            file_reader.onload = (event) => {
+                const uint8Arr = new Uint8Array(event.target.result);
+                const num_bytes = uint8Arr.length * uint8Arr.BYTES_PER_ELEMENT;
+                const data_ptr = Module._malloc(num_bytes);
+                const data_on_heap = new Uint8Array(Module.HEAPU8.buffer, data_ptr, num_bytes);
+                data_on_heap.set(uint8Arr);
+                Module.ccall('load_bin', 'void', ['void', 'void'], [data_on_heap.byteOffset, uint8Arr.length]);
+            };
+            if (e.target.files.length === 0)
+                return;
+            if (e.target.files[0].name.match("^.*\.(ch8)$"))
+                file_reader.readAsArrayBuffer(e.target.files[0]);
+            else
+                Module.printErr("Invalid file extension");
+        };
+    </script>
+    <script type="text/javascript" src="target/wasm32-unknown-emscripten/release/puce8.js"></script>
+
+</body>
+
+</html>
