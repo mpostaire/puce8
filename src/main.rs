@@ -12,7 +12,10 @@ use sdl2::{
 use lazy_static::lazy_static;
 use std::{process, sync::Mutex};
 
-use puce8::{Chip8, Chip8Keys};
+use puce8::emulator::{Chip8, Chip8Keys};
+
+#[cfg(target_os = "emscripten")]
+use puce8::emscripten::set_main_loop_callback;
 
 // This is very hacky but I can't figure how to communicate button inputs from js to rust...
 lazy_static! {
@@ -60,51 +63,6 @@ fn sdl_scancode_to_chip8_key(key: Scancode) -> Option<usize> {
         Scancode::C => Some(Chip8Keys::B as usize),
         Scancode::V => Some(Chip8Keys::F as usize),
         _ => None,
-    }
-}
-
-// taken from https://github.com/Gigoteur/PX8/blob/master/src/px8/emscripten.rs
-#[cfg(target_os = "emscripten")]
-pub mod emscripten {
-    use std::cell::RefCell;
-    use std::os::raw::{c_int, c_void};
-    use std::ptr::null_mut;
-
-    #[allow(non_camel_case_types)]
-    type em_callback_func = unsafe extern "C" fn();
-
-    extern "C" {
-        // void emscripten_set_main_loop(em_callback_func func, int fps, int simulate_infinite_loop)
-        pub fn emscripten_set_main_loop(
-            func: em_callback_func,
-            fps: c_int,
-            simulate_infinite_loop: c_int,
-        );
-    }
-
-    thread_local!(static MAIN_LOOP_CALLBACK: RefCell<*mut c_void> = RefCell::new(null_mut()));
-
-    pub fn set_main_loop_callback<F>(callback: F, fps: c_int)
-    where
-        F: FnMut(),
-    {
-        MAIN_LOOP_CALLBACK.with(|log| {
-            *log.borrow_mut() = &callback as *const _ as *mut c_void;
-        });
-
-        unsafe {
-            emscripten_set_main_loop(wrapper::<F>, fps, 1);
-        }
-
-        unsafe extern "C" fn wrapper<F>()
-        where
-            F: FnMut(),
-        {
-            MAIN_LOOP_CALLBACK.with(|z| {
-                let closure = *z.borrow_mut() as *mut F;
-                (*closure)();
-            });
-        }
     }
 }
 
@@ -233,7 +191,7 @@ fn run_at_speed(bin: Vec<u8>, emu_speed: u32) {
     }
 
     #[cfg(target_os = "emscripten")]
-    emscripten::set_main_loop_callback(main_loop, fps as i32);
+    set_main_loop_callback(main_loop, fps as i32);
 }
 
 fn run(bin: Vec<u8>) {
