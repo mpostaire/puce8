@@ -87,6 +87,45 @@ canvas.emscripten {
     }
 }
 
+.topnav {
+    background-color: #d2d6cd;
+    overflow: hidden;
+
+    box-shadow: 0 0 2em gray;
+    -o-box-shadow: 0 0 2em gray;
+    -moz-box-shadow: 0 0 2em gray;
+    -webkit-box-shadow: 0 0 2em gray;
+}
+
+.topnav a {
+    float: left;
+    color: black;
+    text-align: center;
+    padding: 14px 16px;
+    text-decoration: none;
+    font-size: 17px;
+}
+
+.topnav a:hover {
+    background-color: darkgray;
+    color: black;
+}
+
+.topnav a.split {
+    float: right;
+    background-color: gray;
+    color: white;
+}
+
+.topnav a.split:hover {
+    background-color: dimgray;
+}
+
+.topnav a.active {
+    background-color: black;
+    color: white;
+}
+
 #chip8 {
     display: flex;
     justify-content: center;
@@ -96,7 +135,7 @@ canvas.emscripten {
     top: 50%;
     left: 50%;
     background-color: #d2d6cd;
-    padding: 2em;
+    padding: 2em 1em 2em 2em;
     border-radius: 1em;
 
     box-shadow: 0 0 2em gray;
