@@ -131,7 +131,6 @@ fn run_at_speed(bin: Vec<u8>, emu_speed: u32) {
                     scancode: Some(Scancode::Escape),
                     ..
                 } => {
-                    // break 'running;
                     process::exit(0);
                 }
                 Event::KeyDown {
