@@ -1,7 +1,7 @@
 # puce8
 A chip8 emulator.
 
-You can compile and run it on your machine or use it in your browser [here](mpostaire.github.io/puce8).
+You can compile and run it on your machine or use it in your browser [here](https://mpostaire.github.io/puce8).
 
 ## Screenshots
 
